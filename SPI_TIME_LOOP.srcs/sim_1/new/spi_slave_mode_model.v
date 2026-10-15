@@ -72,8 +72,17 @@ module spi_slave_mode_model #(
 
                 // Data-changing edge: advance the slave response.
                 if (bit_count < FRAME_BITS) begin
-                  miso = tx_shift[FRAME_BITS-1];
-tx_shift = {tx_shift[FRAME_BITS-2:0], 1'b0};
+                    if (!cpha) begin
+                        tx_shift = {
+                            tx_shift[FRAME_BITS-2:0], 1'b0
+                        };
+                        miso = tx_shift[FRAME_BITS-1];
+                    end else begin
+                        miso = tx_shift[FRAME_BITS-1];
+                        tx_shift = {
+                            tx_shift[FRAME_BITS-2:0], 1'b0
+                        };
+                    end
                 end
             end
         end
