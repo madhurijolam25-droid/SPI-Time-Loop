@@ -22,7 +22,11 @@
 
 
 
-module spi_time_loop_top (
+module spi_time_loop_top #(
+    parameter [7:0] GAS_RESPONSE = 8'h30,
+    parameter [7:0] TEMPERATURE_RESPONSE = 8'h30,
+    parameter [7:0] WORKER_STATUS_RESPONSE = 8'h01
+) (
     input  wire       clk,
     input  wire       rst_n,
     input  wire       enable,
@@ -36,7 +40,12 @@ module spi_time_loop_top (
     output wire       busy,
     output wire       done,
     output wire [7:0] rx_data,
-    output wire       scheduler_done
+    output wire       scheduler_done,
+    output reg  [7:0] gas_reading,
+    output reg  [7:0] temperature_reading,
+    output reg  [7:0] worker_status,
+    output reg        worker_distress,
+    output reg        rescue_alert
 );
 
     wire phy_start;
@@ -47,6 +56,9 @@ module spi_time_loop_top (
     wire cfg_clamped;
 
     wire miso0, miso1, miso2;
+
+    localparam [7:0] GAS_WARNING_LEVEL = 8'h40;
+    localparam [7:0] TEMPERATURE_WARNING_LEVEL = 8'h40;
 
     // Scheduler: sequentially selects three slaves.
     spi_scheduler scheduler (
@@ -98,10 +110,10 @@ module spi_time_loop_top (
     // The PHY drives this signal directly.
     // See the connection note below before compiling.
 
-    // Simulated slave 0.
+    // Simulated gas sensor; its 8-bit reading is set by a module parameter.
     spi_slave_mode_model #(
         .FRAME_BITS(8),
-        .RESPONSE(8'h3C)
+        .RESPONSE(GAS_RESPONSE)
     ) slave0 (
         .sclk(sclk),
         .cs_n(slave_cs_n[0]),
@@ -111,10 +123,10 @@ module spi_time_loop_top (
         .miso(miso0)
     );
 
-    // Simulated slave 1.
+    // Simulated temperature sensor; its reading is set by a module parameter.
     spi_slave_mode_model #(
         .FRAME_BITS(8),
-        .RESPONSE(8'hA6)
+        .RESPONSE(TEMPERATURE_RESPONSE)
     ) slave1 (
         .sclk(sclk),
         .cs_n(slave_cs_n[1]),
@@ -124,10 +136,10 @@ module spi_time_loop_top (
         .miso(miso1)
     );
 
-    // Simulated slave 2.
+    // Simulated worker-status device; 8'h01 means OK in this demo.
     spi_slave_mode_model #(
         .FRAME_BITS(8),
-        .RESPONSE(8'h5A)
+        .RESPONSE(WORKER_STATUS_RESPONSE)
     ) slave2 (
         .sclk(sclk),
         .cs_n(slave_cs_n[2]),
@@ -142,6 +154,36 @@ module spi_time_loop_top (
         (slave_sel == 2'd0) ? miso0 :
         (slave_sel == 2'd1) ? miso1 :
         (slave_sel == 2'd2) ? miso2 : 1'b0;
+
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            gas_reading <= 8'h00;
+            temperature_reading <= 8'h00;
+            worker_status <= 8'h01;
+            worker_distress <= 1'b0;
+            rescue_alert <= 1'b0;
+        end else if (phy_done) begin
+            case (slave_sel)
+                2'd0: begin
+                    gas_reading <= rx_data;
+                    if (rx_data >= GAS_WARNING_LEVEL)
+                        rescue_alert <= 1'b1;
+                end
+                2'd1: begin
+                    temperature_reading <= rx_data;
+                    if (rx_data >= TEMPERATURE_WARNING_LEVEL)
+                        rescue_alert <= 1'b1;
+                end
+                2'd2: begin
+                    worker_status <= rx_data;
+                    worker_distress <= (rx_data != 8'h01);
+                    if (rx_data != 8'h01)
+                        rescue_alert <= 1'b1;
+                end
+                default: rescue_alert <= 1'b1;
+            endcase
+        end
+    end
 
     assign done = scheduler_done;
 

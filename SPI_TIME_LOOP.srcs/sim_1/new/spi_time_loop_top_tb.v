@@ -36,6 +36,13 @@ module spi_time_loop_top_tb;
     wire [1:0] slave_sel;
     wire busy, done, scheduler_done;
     wire [7:0] rx_data;
+    wire [7:0] gas_reading, temperature_reading, worker_status;
+    wire worker_distress, rescue_alert;
+    wire gas_hazard_done, temperature_hazard_done, worker_hazard_done;
+    wire gas_hazard_alert, temperature_hazard_alert, worker_hazard_alert;
+    wire [7:0] gas_hazard_reading, temperature_hazard_reading;
+    wire [7:0] worker_hazard_status;
+    wire worker_hazard_distress;
 
     integer errors = 0;
     integer timeout_count;
@@ -54,7 +61,55 @@ module spi_time_loop_top_tb;
         .busy(busy),
         .done(done),
         .rx_data(rx_data),
-        .scheduler_done(scheduler_done)
+        .scheduler_done(scheduler_done),
+        .gas_reading(gas_reading),
+        .temperature_reading(temperature_reading),
+        .worker_status(worker_status),
+        .worker_distress(worker_distress),
+        .rescue_alert(rescue_alert)
+    );
+
+    spi_time_loop_top #(
+        .GAS_RESPONSE(8'h40),
+        .TEMPERATURE_RESPONSE(8'h30),
+        .WORKER_STATUS_RESPONSE(8'h01)
+    ) gas_hazard_dut (
+        .clk(clk), .rst_n(rst_n), .enable(enable),
+        .cfg_cpol(cpol), .cfg_cpha(cpha),
+        .scheduler_done(gas_hazard_done),
+        .gas_reading(gas_hazard_reading),
+        .temperature_reading(),
+        .worker_distress(),
+        .rescue_alert(gas_hazard_alert)
+    );
+
+    spi_time_loop_top #(
+        .GAS_RESPONSE(8'h30),
+        .TEMPERATURE_RESPONSE(8'h40),
+        .WORKER_STATUS_RESPONSE(8'h01)
+    ) temperature_hazard_dut (
+        .clk(clk), .rst_n(rst_n), .enable(enable),
+        .cfg_cpol(cpol), .cfg_cpha(cpha),
+        .scheduler_done(temperature_hazard_done),
+        .gas_reading(),
+        .temperature_reading(temperature_hazard_reading),
+        .worker_distress(),
+        .rescue_alert(temperature_hazard_alert)
+    );
+
+    spi_time_loop_top #(
+        .GAS_RESPONSE(8'h30),
+        .TEMPERATURE_RESPONSE(8'h30),
+        .WORKER_STATUS_RESPONSE(8'h00)
+    ) worker_hazard_dut (
+        .clk(clk), .rst_n(rst_n), .enable(enable),
+        .cfg_cpol(cpol), .cfg_cpha(cpha),
+        .scheduler_done(worker_hazard_done),
+        .gas_reading(),
+        .temperature_reading(),
+        .worker_status(worker_hazard_status),
+        .worker_distress(worker_hazard_distress),
+        .rescue_alert(worker_hazard_alert)
     );
 
     always @(posedge clk) begin
@@ -66,8 +121,8 @@ module spi_time_loop_top_tb;
                                  slave_sel);
                         errors = errors + 1;
                     end
-                    if (rx_data !== 8'h3C) begin
-                        $display("FAIL: slave 0 RX=%02h, expected 3C", rx_data);
+                    if (rx_data !== 8'h30) begin
+                        $display("FAIL: gas sensor RX=%02h, expected 30", rx_data);
                         errors = errors + 1;
                     end
                 end
@@ -78,8 +133,9 @@ module spi_time_loop_top_tb;
                                  slave_sel);
                         errors = errors + 1;
                     end
-                    if (rx_data !== 8'hA6) begin
-                        $display("FAIL: slave 1 RX=%02h, expected A6", rx_data);
+                    if (rx_data !== 8'h30) begin
+                        $display("FAIL: temperature sensor RX=%02h, expected 30",
+                                 rx_data);
                         errors = errors + 1;
                     end
                 end
@@ -90,8 +146,9 @@ module spi_time_loop_top_tb;
                                  slave_sel);
                         errors = errors + 1;
                     end
-                    if (rx_data !== 8'h5A) begin
-                        $display("FAIL: slave 2 RX=%02h, expected 5A", rx_data);
+                    if (rx_data !== 8'h01) begin
+                        $display("FAIL: worker status RX=%02h, expected 01",
+                                 rx_data);
                         errors = errors + 1;
                     end
                 end
@@ -117,13 +174,19 @@ module spi_time_loop_top_tb;
         enable = 0;
 
         timeout_count = 0;
-        while ((scheduler_done !== 1'b1) &&
+        while (((scheduler_done !== 1'b1) ||
+                (gas_hazard_done !== 1'b1) ||
+                (temperature_hazard_done !== 1'b1) ||
+                (worker_hazard_done !== 1'b1)) &&
                (timeout_count < 1000)) begin
             @(negedge clk);
             timeout_count = timeout_count + 1;
         end
 
-        if (scheduler_done !== 1'b1) begin
+        if ((scheduler_done !== 1'b1) ||
+            (gas_hazard_done !== 1'b1) ||
+            (temperature_hazard_done !== 1'b1) ||
+            (worker_hazard_done !== 1'b1)) begin
             $display("FAIL: integration timeout");
             errors = errors + 1;
         end else begin
@@ -133,8 +196,51 @@ module spi_time_loop_top_tb;
                 errors = errors + 1;
             end
 
-            $display("Scheduler completed all three slave selections.");
-            $display("Last received byte: %02h", rx_data);
+            if ((gas_reading !== 8'h30) ||
+                (temperature_reading !== 8'h30) ||
+                (worker_status !== 8'h01) ||
+                (worker_distress !== 1'b0) ||
+                (rescue_alert !== 1'b0)) begin
+                $display("FAIL: safe scenario readings or alert state were incorrect");
+                errors = errors + 1;
+            end
+
+            if ((gas_hazard_alert !== 1'b1) ||
+                (gas_hazard_reading !== 8'h40)) begin
+                $display("FAIL: gas warning scenario did not raise an alert");
+                errors = errors + 1;
+            end
+
+            if ((temperature_hazard_alert !== 1'b1) ||
+                (temperature_hazard_reading !== 8'h40)) begin
+                $display("FAIL: temperature warning scenario did not raise an alert");
+                errors = errors + 1;
+            end
+
+            if ((worker_hazard_alert !== 1'b1) ||
+                (worker_hazard_status !== 8'h00) ||
+                (worker_hazard_distress !== 1'b1)) begin
+                $display("FAIL: worker distress scenario did not raise an alert");
+                errors = errors + 1;
+            end
+
+            $display("Mine scenario completed: gas=%02h temperature=%02h worker_distress=%0d alert=%0d",
+                     gas_reading, temperature_reading, worker_distress,
+                     rescue_alert);
+            $display("Gas, temperature, and worker-distress alert scenarios checked.");
+
+            @(negedge clk);
+            rst_n = 0;
+            @(negedge clk);
+            if ((rescue_alert !== 1'b0) ||
+                (gas_hazard_alert !== 1'b0) ||
+                (temperature_hazard_alert !== 1'b0) ||
+                (worker_hazard_alert !== 1'b0)) begin
+                $display("FAIL: reset did not clear the rescue alerts");
+                errors = errors + 1;
+            end else begin
+                $display("PASS: reset cleared the rescue alerts");
+            end
         end
 
         if (errors == 0)
