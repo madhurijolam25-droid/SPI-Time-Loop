@@ -23,11 +23,10 @@ SPI Time Loop explores communication between one SPI master and three simulated 
 
 - **Configurable PHY:** Simulation passed MOSI and MISO checks in all four SPI modes. The PHY received the expected `0x3C` response in each mode and transmitted `0xA5`.
 - **Scheduler:** Test passed for sequential selection of three simulated slaves.
-- **Top-level integration:** Simulation completed all three slave selections and ended with slave 2 selected, receiving its configured `0x5A` response. The integration testbench currently checks scheduler completion but does not assert each slave's received byte.
+- **Top-level integration:** Simulation passed checks for the ordered slave selections and received bytes: slave 0 returned `0x3C`, slave 1 returned `0xA6`, and slave 2 returned `0x5A`.
 
 ## Next Steps
 
-- Expand integration tests to assert the received byte for each slave selection.
 - Document additional features as they are implemented and verified.
 
 ## License

@@ -39,6 +39,7 @@ module spi_time_loop_top_tb;
 
     integer errors = 0;
     integer timeout_count;
+    integer transaction_count = 0;
 
     spi_time_loop_top dut (
         .clk(clk),
@@ -55,6 +56,55 @@ module spi_time_loop_top_tb;
         .rx_data(rx_data),
         .scheduler_done(scheduler_done)
     );
+
+    always @(posedge clk) begin
+        if (rst_n && dut.phy_done) begin
+            case (transaction_count)
+                0: begin
+                    if (slave_sel !== 2'd0) begin
+                        $display("FAIL: transaction 0 selected slave %0d, expected 0",
+                                 slave_sel);
+                        errors = errors + 1;
+                    end
+                    if (rx_data !== 8'h3C) begin
+                        $display("FAIL: slave 0 RX=%02h, expected 3C", rx_data);
+                        errors = errors + 1;
+                    end
+                end
+
+                1: begin
+                    if (slave_sel !== 2'd1) begin
+                        $display("FAIL: transaction 1 selected slave %0d, expected 1",
+                                 slave_sel);
+                        errors = errors + 1;
+                    end
+                    if (rx_data !== 8'hA6) begin
+                        $display("FAIL: slave 1 RX=%02h, expected A6", rx_data);
+                        errors = errors + 1;
+                    end
+                end
+
+                2: begin
+                    if (slave_sel !== 2'd2) begin
+                        $display("FAIL: transaction 2 selected slave %0d, expected 2",
+                                 slave_sel);
+                        errors = errors + 1;
+                    end
+                    if (rx_data !== 8'h5A) begin
+                        $display("FAIL: slave 2 RX=%02h, expected 5A", rx_data);
+                        errors = errors + 1;
+                    end
+                end
+
+                default: begin
+                    $display("FAIL: unexpected extra PHY transaction");
+                    errors = errors + 1;
+                end
+            endcase
+
+            transaction_count = transaction_count + 1;
+        end
+    end
 
     initial begin
         repeat (4) @(negedge clk);
@@ -77,6 +127,12 @@ module spi_time_loop_top_tb;
             $display("FAIL: integration timeout");
             errors = errors + 1;
         end else begin
+            if (transaction_count != 3) begin
+                $display("FAIL: observed %0d PHY transactions, expected 3",
+                         transaction_count);
+                errors = errors + 1;
+            end
+
             $display("Scheduler completed all three slave selections.");
             $display("Last received byte: %02h", rx_data);
         end
