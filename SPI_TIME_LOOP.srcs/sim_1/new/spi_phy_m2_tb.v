@@ -149,6 +149,84 @@ module spi_phy_m2_tb;
         end
     endtask
 
+    task test_zero_timing_config;
+        begin
+            @(negedge clk);
+            cpol = 0;
+            cpha = 0;
+            half_div = 0;
+            cs_setup = 0;
+            cs_hold = 0;
+            cs_gap = 0;
+            tx_data = 8'hA5;
+
+            repeat (3) @(negedge clk);
+
+            start = 1;
+            @(negedge clk);
+            start = 0;
+
+            if (cfg_clamped !== 1'b1) begin
+                $display("FAIL: zero timing configuration was not flagged");
+                errors = errors + 1;
+            end
+
+            timeout_count = 0;
+            while ((done !== 1'b1) && (timeout_count < 500)) begin
+                @(negedge clk);
+                timeout_count = timeout_count + 1;
+            end
+
+            if (done !== 1'b1) begin
+                $display("FAIL: zero timing configuration timed out");
+                errors = errors + 1;
+            end else if (rx_data !== 8'h3C) begin
+                $display("FAIL: zero timing configuration RX=%02h, expected 3C",
+                         rx_data);
+                errors = errors + 1;
+            end else begin
+                $display("PASS: zero timing configuration clamped; RX=3C");
+            end
+
+            while (busy) @(negedge clk);
+            repeat (3) @(negedge clk);
+        end
+    endtask
+
+    task test_reset_during_transfer;
+        begin
+            @(negedge clk);
+            cpol = 0;
+            cpha = 0;
+            half_div = 2;
+            cs_setup = 2;
+            cs_hold = 2;
+            cs_gap = 2;
+
+            repeat (3) @(negedge clk);
+
+            start = 1;
+            @(negedge clk);
+            start = 0;
+
+            while (cs_n !== 1'b0) @(negedge clk);
+            repeat (3) @(negedge clk);
+            rst_n = 0;
+            @(negedge clk);
+
+            if ((busy !== 1'b0) || (cs_n !== 1'b1) ||
+                (done !== 1'b0) || (rx_data !== 8'h00)) begin
+                $display("FAIL: reset did not abort and clear the PHY transaction");
+                errors = errors + 1;
+            end else begin
+                $display("PASS: reset aborted the active PHY transaction");
+            end
+
+            rst_n = 1;
+            repeat (3) @(negedge clk);
+        end
+    endtask
+
     initial begin
         repeat (4) @(negedge clk);
         rst_n = 1;
@@ -157,6 +235,8 @@ module spi_phy_m2_tb;
         run_mode(0,1);
         run_mode(1,0);
         run_mode(1,1);
+        test_zero_timing_config();
+        test_reset_during_transfer();
 
         if (errors == 0)
             $display("OVERALL: PASS");

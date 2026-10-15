@@ -84,6 +84,12 @@ module spi_scheduler_tb;
         @(negedge clk);
         enable = 0;
 
+        wait (phy_start === 1'b1);
+        @(negedge clk);
+        enable = 1;
+        @(negedge clk);
+        enable = 0;
+
         timeout_count = 0;
         while ((scheduler_done !== 1'b1) &&
                (timeout_count < 100)) begin

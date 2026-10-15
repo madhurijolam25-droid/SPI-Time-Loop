@@ -21,8 +21,8 @@ SPI Time Loop explores communication between one SPI master and three simulated 
 
 ## Verification Status
 
-- **Configurable PHY:** Simulation passed MOSI and MISO checks in all four SPI modes. The PHY received the expected `0x3C` response in each mode and transmitted `0xA5`.
-- **Scheduler:** Test passed for sequential selection of three simulated slaves.
+- **Configurable PHY:** Simulation passed MOSI and MISO checks in all four SPI modes. The PHY received the expected `0x3C` response in each mode and transmitted `0xA5`. Zero timing inputs were flagged as clamped while the transfer completed correctly, and reset during a transfer aborted the transaction and cleared the PHY outputs.
+- **Scheduler:** Test passed for sequential selection of three simulated slaves, including an `enable` pulse while busy; exactly three transactions completed.
 - **Top-level integration:** Simulation passed checks for the ordered slave selections and received bytes: slave 0 returned `0x3C`, slave 1 returned `0xA6`, and slave 2 returned `0x5A`.
 
 ## Next Steps
